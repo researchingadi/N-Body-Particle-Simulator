@@ -47,3 +47,4 @@ def test_no_merger_when_far_apart():
     sim = Simulation(positions, velocities, masses, config)
     sim.step()
     assert sim.masses.shape[0] == 2
+
