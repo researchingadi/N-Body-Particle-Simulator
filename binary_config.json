@@ -1,0 +1,10 @@
+{
+  "dt": 0.005,
+  "softening": 0.01,
+  "G": 1.0,
+  "integrator": "leapfrog",
+  "seed": 0,
+  "enable_collisions": false,
+  "merge_distance": 0.05,
+  "preset_name": "binary_orbit"
+}
