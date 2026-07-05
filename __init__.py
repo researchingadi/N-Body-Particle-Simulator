@@ -1,1 +1,1 @@
-"""Conservation diagnostics: energy, momentum, angular momentum, COM drift."""
+"""Initial-condition generators for standard test systems."""
