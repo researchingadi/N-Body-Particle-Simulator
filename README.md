@@ -1,4 +1,4 @@
-# Neural Gravity Lab: Advanced N-Body Particle Simulator
+# Advanced N-Body Particle Simulator
 
 A research-grade gravitational N-body simulation platform combining
 validated numerical physics, high-performance computation, cinematic
