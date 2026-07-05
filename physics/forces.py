@@ -79,3 +79,11 @@ def compute_potential_energy(
     iu = np.triu_indices(n, k=1)
     pair_terms = masses[iu[0]] * masses[iu[1]] / dist[iu]
     return float(-G * np.sum(pair_terms))
+    n = positions.shape[0]
+    if n < 2:
+        return 0.0
+    diff = pairwise_separations(positions)
+    dist = np.sqrt(np.sum(diff * diff, axis=-1) + softening**2)
+    iu = np.triu_indices(n, k=1)
+    pair_terms = masses[iu[0]] * masses[iu[1]] / dist[iu]
+    return float(-G * np.sum(pair_terms))
