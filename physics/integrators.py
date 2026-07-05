@@ -103,3 +103,35 @@ def rk4_step(
     new_positions = positions + (dt / 6.0) * (k1x + 2 * k2x + 2 * k3x + k4x)
     new_velocities = velocities + (dt / 6.0) * (k1v + 2 * k2v + 2 * k3v + k4v)
     return new_positions, new_velocities
+    velocity-independent forces; provided as a distinct named entry point
+    for API clarity and future extension (e.g. velocity-dependent drag).
+    """
+    a0 = prev_accel if prev_accel is not None else accel_fn(positions, masses)
+    new_positions = positions + velocities * dt + 0.5 * a0 * dt**2
+    a1 = accel_fn(new_positions, masses)
+    new_velocities = velocities + 0.5 * (a0 + a1) * dt
+    return new_positions, new_velocities, a1
+
+
+def rk4_step(
+    positions: np.ndarray,
+    velocities: np.ndarray,
+    masses: np.ndarray,
+    dt: float,
+    accel_fn: AccelFn,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Classic 4th-order Runge-Kutta. Not symplectic -- energy drifts slowly
+    over long integrations despite high per-step accuracy. Provided as an
+    optional reference integrator, not the recommended default.
+    """
+    def deriv(x: np.ndarray, v: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        return v, accel_fn(x, masses)
+
+    k1x, k1v = deriv(positions, velocities)
+    k2x, k2v = deriv(positions + 0.5 * dt * k1x, velocities + 0.5 * dt * k1v)
+    k3x, k3v = deriv(positions + 0.5 * dt * k2x, velocities + 0.5 * dt * k2v)
+    k4x, k4v = deriv(positions + dt * k3x, velocities + dt * k3v)
+
+    new_positions = positions + (dt / 6.0) * (k1x + 2 * k2x + 2 * k3x + k4x)
+    new_velocities = velocities + (dt / 6.0) * (k1v + 2 * k2v + 2 * k3v + k4v)
+    return new_positions, new_velocities
