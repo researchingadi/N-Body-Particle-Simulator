@@ -141,7 +141,7 @@ python scripts/run_convergence_study.py   # convergence/validation study
 ## Architecture
 
 ```
-neural_gravity_lab/
+N-Body Particle Simulator/
   physics/             Force law + integrators (pure functions, no state)
   diagnostics/         Conservation quantity calculations + drift metrics
   initial_conditions/  Reproducible test-system generators
