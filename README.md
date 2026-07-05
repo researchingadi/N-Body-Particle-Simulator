@@ -1,4 +1,4 @@
-# Advanced N-Body Particle Simulator
+# Neural Gravity Lab: Advanced N-Body Particle Simulator
 
 A research-grade gravitational N-body simulation platform combining
 validated numerical physics, high-performance computation, cinematic
@@ -141,7 +141,7 @@ python scripts/run_convergence_study.py   # convergence/validation study
 ## Architecture
 
 ```
-N-Body Particle Simulator/
+neural_gravity_lab/
   physics/             Force law + integrators (pure functions, no state)
   diagnostics/         Conservation quantity calculations + drift metrics
   initial_conditions/  Reproducible test-system generators
