@@ -5,8 +5,8 @@ validated numerical physics, high-performance computation, cinematic
 interactive visualization, and (later) scientific ML / uncertainty
 quantification.
 
-**Status: Stage 4A — FastAPI backend added.** Correctness-first.
-No frontend or ML yet — those come after this core is validated.
+**Status: Stage 4B — React/Three.js cinematic frontend added.** Correctness-first.
+No ML/uncertainty features yet — those come after this core is validated.
 
 ## What's implemented right now
 
@@ -45,17 +45,23 @@ No frontend or ML yet — those come after this core is validated.
   (`validation/gpu_validation.py`, `visualization/gpu_validation_plots.py`)
 - **FastAPI backend**: thin HTTP layer over the same `Simulation` class
   every script uses -- create/step/query/delete simulations by preset,
-  solver, and integrator, over a REST API a future frontend can call
-  (`api/main.py`, `api/models.py`, `api/simulation_manager.py`)
+  solver, and integrator, over a REST API the frontend calls
+  (`api/main.py`, `api/models.py`, `api/simulation_manager.py`); CORS
+  enabled for local frontend dev servers
+- **React/Three.js cinematic frontend**: full-bleed WebGL scene with
+  instanced glowing particles (mass/velocity-encoded color and size),
+  shader-based fading orbital trails, bloom/vignette post-processing, four
+  camera modes, and a live scientific HUD (diagnostics, controls, preset/
+  solver selection) -- calls the FastAPI backend exclusively, computes no
+  physics itself (`frontend/`)
 - Unit tests covering force symmetry, no self-force, momentum conservation,
   two-body orbit stability, energy drift bounds, merger conservation,
   convergence-harness correctness, Barnes-Hut accuracy/tree-aggregation
   correctness, Taichi backend correctness/fallback safety, and the FastAPI
-  layer's request handling/status codes (`tests/`)
+  layer's request handling/status codes/CORS (`tests/`)
 
 ## What's explicitly NOT here yet (by design)
 
-- React/Three.js frontend
 - PyTorch ML surrogate / uncertainty quantification
 - Chaos / Lyapunov diagnostics
 
@@ -547,6 +553,154 @@ python scripts/run_api_smoke_test.py
   initial-condition generation, only the dynamics afterward. Documented
   here so it isn't a surprise; not silently patched, since altering
   presets.py wasn't in scope for this stage.
+- **CORS** is enabled (`CORSMiddleware`) for local frontend dev-server
+  origins (Vite's default `http://localhost:5173`, plus common alternates)
+  so the Stage 4B frontend can call this API across origins during local
+  development — see `api/main.py`'s `_LOCAL_DEV_ORIGINS`. This is a
+  development allowlist, not a production CORS policy; a real deployment
+  would restrict this to the frontend's actual deployed origin.
+
+## React/Three.js Cinematic Frontend
+
+**The frontend calls the backend — it never computes physics.** Every
+particle position rendered in the browser came from a `POST
+/simulations/{id}/step` or `GET /simulations/{id}/state` response; nothing
+under `frontend/src/` integrates the equations of motion, evaluates a
+force law, or advances time. The validated Python engine (Stages 1–3)
+remains the sole source of truth. This isn't just a design preference —
+there is no force-law code anywhere in the frontend to have silently
+diverged from the backend's, by construction.
+
+**Stack:** React 19 + TypeScript, Vite, `@react-three/fiber` (React
+bindings for Three.js — this is real Three.js underneath, not a different
+engine), `@react-three/drei` (camera controls, starfield), `@react-three/postprocessing`
+(bloom, vignette), Zustand (state), Recharts (diagnostics sparkline),
+Tailwind CSS v4.
+
+**Architecture** (matches the requested component breakdown):
+
+```
+frontend/src/
+  api/client.ts              typed fetch wrapper, one function per backend endpoint
+  types/simulation.ts        TypeScript mirror of api/models.py's Pydantic schemas
+  store/simulationStore.ts   Zustand store: API orchestration + playback loop + view state
+  components/
+    App.tsx                  layout: full-bleed canvas + floating HUD panels
+    SimulationCanvas.tsx      Three.js Canvas + post-processing composition
+    ControlPanel.tsx          playback, preset/solver/integrator, view toggles
+    PresetSelector.tsx        preset dropdown + per-preset parameter fields
+    SolverSelector.tsx        solver/integrator + dt/softening/theta/G fields
+    DiagnosticsPanel.tsx      live energy/momentum/COM readouts + drift sparkline
+    TopBar.tsx                connection status, running/paused state
+    Legend.tsx                color-encoding key, camera mode, controls hint
+    scene/
+      Particles.tsx           instanced-mesh particle renderer (the perf-critical piece)
+      ParticleTrails.tsx      shader-based fading orbital trails
+      CameraRig.tsx            orbit / follow-COM / follow-particle / flythrough
+      ComMarker.tsx            pulsing center-of-mass marker
+      VelocityVectors.tsx      optional per-particle velocity overlay
+      SceneBackground.tsx      starfield, fog, grid toggle
+      visualEncoding.ts        mass/velocity -> size/color mapping (shared, testable)
+```
+
+**Visual design.** Dark, blue-black deep-space background (not flat pure
+black); particles are unlit, additively-blended emissive spheres so bloom
+post-processing turns them into genuinely glowing bodies rather than flat
+dots; mass maps to size via a fourth-root curve (compresses the ~100–1000x
+mass ratios in presets like `disk_galaxy` or `solar_system` so a central
+body reads as dominant without swallowing the scene); trails fade smoothly
+via a custom per-vertex-alpha shader rather than a flat-opacity line. The
+HUD is a floating "mission control" overlay (glass panels, `backdrop-filter`
+blur) over a full-bleed canvas, not a boxed sidebar+content dashboard — the
+simulation is the page, not a widget on it. Typography pairs Space Grotesk
+(display/UI) with IBM Plex Mono (all numeric readouts, so digits don't
+jitter as they update) — chosen for a scientific-instrument feel (an
+oscilloscope/telemetry aesthetic) rather than a generic accent-color dark
+theme.
+
+**The four camera modes**, all in `scene/CameraRig.tsx`:
+- **Orbit** — free user-controlled orbit (`OrbitControls` default behavior).
+- **Follow center of mass** — the orbit target smoothly lerps to the
+  live center of mass every frame.
+- **Follow selected particle** — click any body to select it (instanced-mesh
+  raycasting); the orbit target lerps to its live position.
+- **Cinematic flythrough** — continuous slow auto-orbit around the current
+  target (`OrbitControls.autoRotate`). This is an honest, lightweight
+  reading of "flythrough": a smooth automatic orbit, not a scripted
+  multi-waypoint camera path between points of interest — a real waypoint
+  system is a reasonable future enhancement, not something to overclaim here.
+
+**Performance discipline (the brief's explicit requirement, not an
+afterthought).** Per-frame particle position/velocity data is read via
+`useSimulationStore.getState()` **inside** `useFrame` callbacks, never via
+the reactive `useSimulationStore(selector)` hook. Reading via `getState()`
+does not subscribe to changes, so a playback tick updating hundreds of
+particles' positions mutates the `InstancedMesh`'s GPU buffers directly
+and never re-renders the React tree or reflows the HUD. Components that DO
+use the reactive hook (`ControlPanel`, `DiagnosticsPanel`, `TopBar`)
+deliberately only read low-frequency fields (`isRunning`, `diagnostics`,
+UI toggles) for exactly this reason. Backend requests are batched: the
+playback loop calls `/step` with a configurable `n_steps` (default 8) on a
+configurable interval (default every 100ms), not once per animation frame
+— see "Steps / batch" and "Interval" in the control panel.
+
+**API integration.** `api/client.ts` implements exactly the six endpoints
+from Stage 4A (`getHealth`, `getPresets`, `createSimulation`,
+`stepSimulation`, `getState`, `getDiagnostics`, `deleteSimulation`), typed
+against `types/simulation.ts`, which mirrors `api/models.py` field-for-field.
+An `ApiError` class distinguishes network-level failures ("backend
+unreachable") from HTTP error responses, so the UI can show a specific,
+honest status rather than a generic failure.
+
+**Running it:**
+
+```bash
+# Terminal 1 -- backend
+uvicorn api.main:app --reload
+
+# Terminal 2 -- frontend
+cd frontend
+npm install
+npm run dev
+```
+
+Then open `http://localhost:5173`. The frontend expects the backend at
+`http://127.0.0.1:8000` by default; override with `VITE_API_BASE_URL` (see
+`frontend/.env.example`) if it's running elsewhere.
+
+**Verified working end-to-end in this environment** (no GUI browser was
+available to capture a screenshot in the sandbox this was built in — see
+limitations below): `npm run build` compiles cleanly; both dev servers
+start correctly; a real CORS preflight from `http://localhost:5173` against
+the FastAPI backend succeeds; a full `POST /simulations` request sent with
+that origin header succeeds end-to-end (201 Created, correct config echo).
+
+**Limitations/caveats:**
+- **No visual screenshot was captured.** This was built and verified in a
+  sandboxed environment with no GUI browser and no WebGL-capable headless
+  renderer available — verification covered the build, the dev servers,
+  and the actual HTTP/CORS flow the browser would perform, but not a
+  rendered frame. Run it locally to see the actual visual result.
+- **No inter-frame interpolation.** Particle positions update once per
+  batched backend step (every ~100ms by default), not smoothly
+  extrapolated between backend updates. At small `dt`/large batch sizes
+  this reads as smooth motion; at large `dt`/small batches, motion can look
+  slightly stepped. Interpolating between the last two known states would
+  fix this and is a reasonable next visual-polish pass.
+- **Bundle size**: the production build is ~1.5MB (~410KB gzipped),
+  dominated by Three.js + postprocessing + Recharts. Vite warns about this;
+  code-splitting (e.g. lazy-loading Recharts, only used by one panel) would
+  reduce initial load time and hasn't been done yet.
+- **Trail and velocity-vector overlays rebuild their entire geometry buffer
+  on every new backend tick**, not incrementally. Fine at the particle
+  counts these presets produce (tens to low thousands); a very large
+  system stepped at a very fast interval could make this the bottleneck
+  before the backend's own solver does.
+- No screenshot/export button, solver-comparison view, or real-time
+  side-by-side diagnostic graphs beyond the single energy-drift sparkline
+  yet — these were listed as optional/stretch goals; the core visual and
+  functional requirements were prioritized first.
+- Camera "flythrough" is auto-orbit, not scripted waypoints — see above.
 
 ## Quickstart
 
@@ -560,6 +714,9 @@ python benchmarks/benchmark_barnes_hut.py    # Barnes-Hut runtime benchmark
 python scripts/run_gpu_validation.py         # Taichi GPU/CPU vs. direct vs. Barnes-Hut study
 uvicorn api.main:app --reload                # run the FastAPI backend locally
 python scripts/run_api_smoke_test.py         # exercise the API without a running server
+
+# Frontend (separate terminal, backend must be running)
+cd frontend && npm install && npm run dev    # open http://localhost:5173
 ```
 
 ## Architecture
@@ -575,6 +732,7 @@ neural_gravity_lab/
   validation/          Convergence, Barnes-Hut, and GPU validation harnesses
   benchmarks/          Focused runtime benchmarks (regression checks)
   api/                 FastAPI HTTP layer over the Simulation engine
+  frontend/            React/Three.js cinematic visualization client
   tests/               Physics correctness + validation-harness + API test suite
   scripts/             Runnable demos, validation studies, and an API smoke test
 ```
@@ -587,6 +745,10 @@ validated against the direct solver and swapped into `Simulation` via
 API layer extends this same principle one level up: `api/` depends on
 `simulation/`, never the other way around, so the engine stays usable
 standalone (scripts, notebooks, tests) with zero HTTP-framework dependency.
+`frontend/` extends it one level further still: it depends only on `api/`'s
+HTTP contract (never importing or reimplementing physics), so the engine,
+the API, and the visualization client can each be validated, run, and
+reasoned about independently.
 
 ## Roadmap
 
@@ -596,11 +758,12 @@ standalone (scripts, notebooks, tests) with zero HTTP-framework dependency.
 4. ✅ Tests and validation
 5. ✅ Simple visualization/export
 5.5. ✅ Convergence/validation harness (dt & softening sweeps, integrator comparison)
-6. ⬜ Interactive frontend (React/Next.js + Three.js/WebGPU)
+6. ✅ Interactive frontend (React + Three.js, via the FastAPI backend)
 7. ✅ GPU acceleration (Taichi), validated against the direct solver
 8. ✅ Barnes-Hut O(N log N) approximation, validated against direct solver
-4A. ✅ FastAPI backend wrapping the validated engine (this stage)
-9. ⬜ Advanced visuals: trails, glow, camera modes, BH tree overlay, benchmarking
+4A. ✅ FastAPI backend wrapping the validated engine
+4B. ✅ React/Three.js cinematic frontend (this stage)
+9. ⬜ Advanced visuals: BH tree overlay, screenshot/export, solver-comparison view
 10. ⬜ ML surrogate + uncertainty quantification + chaos/Lyapunov diagnostics
 
 ## Why this project
