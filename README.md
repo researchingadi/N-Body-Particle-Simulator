@@ -5,7 +5,7 @@ validated numerical physics, high-performance computation, cinematic
 interactive visualization, and (later) scientific ML / uncertainty
 quantification.
 
-**Status: Stage 3 — GPU acceleration (Taichi) added.** Correctness-first.
+**Status: Stage 4A — FastAPI backend added.** Correctness-first.
 No frontend or ML yet — those come after this core is validated.
 
 ## What's implemented right now
@@ -43,14 +43,18 @@ No frontend or ML yet — those come after this core is validated.
   CPU compared on accuracy, runtime, speedup, and peak memory across
   particle counts, CSV + plots
   (`validation/gpu_validation.py`, `visualization/gpu_validation_plots.py`)
+- **FastAPI backend**: thin HTTP layer over the same `Simulation` class
+  every script uses -- create/step/query/delete simulations by preset,
+  solver, and integrator, over a REST API a future frontend can call
+  (`api/main.py`, `api/models.py`, `api/simulation_manager.py`)
 - Unit tests covering force symmetry, no self-force, momentum conservation,
   two-body orbit stability, energy drift bounds, merger conservation,
   convergence-harness correctness, Barnes-Hut accuracy/tree-aggregation
-  correctness, and Taichi backend correctness/fallback safety (`tests/`)
+  correctness, Taichi backend correctness/fallback safety, and the FastAPI
+  layer's request handling/status codes (`tests/`)
 
 ## What's explicitly NOT here yet (by design)
 
-- FastAPI backend
 - React/Three.js frontend
 - PyTorch ML surrogate / uncertainty quantification
 - Chaos / Lyapunov diagnostics
@@ -435,6 +439,115 @@ already spot-checks this end-to-end).
   of this codebase; it's called out explicitly in that file's module
   docstring so it doesn't look like an accidental inconsistency.
 
+## FastAPI Simulation Backend
+
+**The backend wraps the validated Python engine — it does not reimplement
+it.** Every route handler in `api/main.py` ultimately calls the same
+`simulation.engine.Simulation` class, the same `initial_conditions.presets`
+factory functions, and the same `diagnostics.conservation` functions that
+`scripts/run_demo.py` and every validation script use. No physics,
+integration, or force-law logic lives anywhere under `api/` — that module
+is pure HTTP-shaped serialization and orchestration around code that was
+already validated in Stages 1 through 3. Choosing a solver via the API
+(`"direct"`, `"barnes_hut"`, or `"taichi_direct"`) selects the exact same
+`SimulationConfig.solver` field a Python script would set directly.
+
+**The frontend will call this API.** Stage 6 (the React/Three.js
+interactive frontend) is not built yet, but this is the contract it will
+be built against: create a simulation from a preset, step it forward,
+poll for particle state to render, poll for diagnostics to plot. Physics
+stays in Python on the server; the frontend's job is rendering and
+interaction, never force computation — the project brief's "do not move
+physics into JavaScript" constraint, enforced by construction here since
+there's simply no force-law code available to move.
+
+**Endpoints:**
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/health` | Backend status, available solvers/integrators, active simulation count |
+| GET | `/presets` | Available initial-condition presets + their tunable parameters |
+| POST | `/simulations` | Create a simulation from a preset + config, returns its id |
+| POST | `/simulations/{id}/step` | Advance by `n_steps` (default 1), returns resulting state |
+| GET | `/simulations/{id}/state` | Current positions/velocities/masses/time |
+| GET | `/simulations/{id}/diagnostics` | Current energy/momentum/angular-momentum/COM, computed live |
+| DELETE | `/simulations/{id}` | Remove a simulation from memory |
+
+**Example payload** — create a binary orbit with Barnes-Hut, step it, read diagnostics:
+
+```bash
+curl -X POST http://127.0.0.1:8000/simulations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "preset": "binary_orbit",
+    "preset_params": {"separation": 2.0},
+    "dt": 0.005,
+    "softening": 0.01,
+    "integrator": "leapfrog",
+    "solver": "direct"
+  }'
+# -> {"simulation_id": "...", "n_particles": 2, "config": {...}}
+
+curl -X POST http://127.0.0.1:8000/simulations/{id}/step -d '{"n_steps": 200}'
+# -> {"simulation_id": "...", "time": 1.0, "step_count": 200, "n_particles": 2,
+#     "particles": {"positions": [[...], [...]], "velocities": [...], "masses": [...]}}
+
+curl http://127.0.0.1:8000/simulations/{id}/diagnostics
+# -> {"total_energy": -0.249994, "momentum": [0,0,0], "angular_momentum": [0,0,1.0], ...}
+```
+
+**Solver selection is validated automatically, not by hand-written checks.**
+`solver`, `integrator`, and `preset` are all Pydantic `Literal` types
+imported directly from `simulation.engine` (not re-declared) and
+`api.models`'s own preset registry, so FastAPI generates correct OpenAPI
+schema and rejects an invalid value (e.g. `"solver": "quantum_gpu"`) with a
+422 automatically — there's exactly one place that defines which solvers
+exist, and the API can't drift out of sync with it.
+
+**Design decision: live diagnostics, not accumulated history.**
+`Simulation.run()` (used by every script) calls `record()` each step,
+appending to an in-memory history/trajectory list meant for post-hoc
+plotting of one finite run. The API's `SimulationManager` deliberately
+calls `Simulation.step()` directly instead, in a loop, and computes
+diagnostics fresh from current particle state on every `/diagnostics`
+request. A simulation behind this API might be stepped thousands of times
+across many small requests over a long-lived server process — accumulating
+full history for all of that would be an unbounded, unnecessary memory
+leak for a use case that only ever wants the *current* state.
+
+**Running it locally:**
+
+```bash
+uvicorn api.main:app --reload
+```
+
+Then visit `http://127.0.0.1:8000/docs` for FastAPI's interactive OpenAPI
+UI, or run the smoke test (no server needed, uses an in-process
+`TestClient`):
+
+```bash
+python scripts/run_api_smoke_test.py
+```
+
+**Limitations/caveats:**
+- In-memory only: simulations vanish on server restart. No persistence
+  layer (database, Redis) yet — the `SimulationManager` class is
+  structured so one could be added later without changing any route
+  handler, but that's future work, not this stage's job.
+- No authentication, rate limiting, or multi-user isolation — anyone who
+  can reach the server can create/step/delete any simulation. Fine for a
+  local dev backend a frontend talks to; not production-hardened.
+- Full trajectory/history export (the CSV export scripts use) isn't
+  exposed via the API yet, only live current-state snapshots — deliberate,
+  per the "live diagnostics, not accumulated history" design decision above.
+- `star_cluster`, `random_cloud`, and `galaxy_merger` presets don't expose
+  a `G` parameter (a pre-existing property of those functions in
+  `initial_conditions/presets.py`, not something this API layer changes),
+  so requesting a non-default `G` with those presets won't affect their
+  initial-condition generation, only the dynamics afterward. Documented
+  here so it isn't a surprise; not silently patched, since altering
+  presets.py wasn't in scope for this stage.
+
 ## Quickstart
 
 ```bash
@@ -445,6 +558,8 @@ python scripts/run_convergence_study.py      # convergence/validation study
 python scripts/run_barnes_hut_validation.py  # Barnes-Hut accuracy/performance study
 python benchmarks/benchmark_barnes_hut.py    # Barnes-Hut runtime benchmark
 python scripts/run_gpu_validation.py         # Taichi GPU/CPU vs. direct vs. Barnes-Hut study
+uvicorn api.main:app --reload                # run the FastAPI backend locally
+python scripts/run_api_smoke_test.py         # exercise the API without a running server
 ```
 
 ## Architecture
@@ -459,15 +574,19 @@ neural_gravity_lab/
   visualization/       Matplotlib plots + validation/BH/GPU validation plots
   validation/          Convergence, Barnes-Hut, and GPU validation harnesses
   benchmarks/          Focused runtime benchmarks (regression checks)
-  tests/               Physics correctness + validation-harness test suite
-  scripts/             Runnable demos and validation studies
+  api/                 FastAPI HTTP layer over the Simulation engine
+  tests/               Physics correctness + validation-harness + API test suite
+  scripts/             Runnable demos, validation studies, and an API smoke test
 ```
 
 Design principle: `physics/` functions are pure (positions, masses in ->
 accelerations out), so Barnes-Hut and Taichi implementations share the same
 `accel_fn(positions, masses) -> accelerations` contract and can be
 validated against the direct solver and swapped into `Simulation` via
-`SimulationConfig.solver` without changing the engine's stepping loop.
+`SimulationConfig.solver` without changing the engine's stepping loop. The
+API layer extends this same principle one level up: `api/` depends on
+`simulation/`, never the other way around, so the engine stays usable
+standalone (scripts, notebooks, tests) with zero HTTP-framework dependency.
 
 ## Roadmap
 
@@ -480,6 +599,7 @@ validated against the direct solver and swapped into `Simulation` via
 6. ⬜ Interactive frontend (React/Next.js + Three.js/WebGPU)
 7. ✅ GPU acceleration (Taichi), validated against the direct solver
 8. ✅ Barnes-Hut O(N log N) approximation, validated against direct solver
+4A. ✅ FastAPI backend wrapping the validated engine (this stage)
 9. ⬜ Advanced visuals: trails, glow, camera modes, BH tree overlay, benchmarking
 10. ⬜ ML surrogate + uncertainty quantification + chaos/Lyapunov diagnostics
 
