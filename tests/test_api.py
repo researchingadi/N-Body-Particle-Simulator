@@ -226,3 +226,31 @@ def test_invalid_preset_params_returns_400(client):
         "/simulations", json={"preset": "binary_orbit", "preset_params": {"not_a_real_kwarg": 1.0}}
     )
     assert response.status_code == 400
+
+
+def test_cors_allows_local_vite_dev_server(client):
+    """The frontend (Stage 4B) runs on http://localhost:5173 by default --
+    confirm the API actually sends back CORS headers permitting it, not
+    just that CORSMiddleware is imported.
+    """
+    response = client.get("/health", headers={"Origin": "http://localhost:5173"})
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:5173"
+
+
+def test_cors_preflight_request_succeeds(client):
+    """Browsers send an OPTIONS preflight before a cross-origin POST with a
+    JSON body -- confirm that preflight is actually handled, since a
+    missing/misconfigured CORS setup often passes simple GETs but fails
+    exactly this check, which is what actually blocks the frontend.
+    """
+    response = client.options(
+        "/simulations",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert response.status_code in (200, 204)
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:5173"
