@@ -123,3 +123,55 @@ def center_of_mass_drift(com_history: np.ndarray) -> float:
     displacement = com_history - com_history[0]
     return float(np.max(np.linalg.norm(displacement, axis=1)))
 
+        return float(energies[-1])
+    return float((energies[-1] - e0) / abs(e0))
+
+
+def max_relative_energy_drift(energies: np.ndarray) -> float:
+    """max_t |E(t) - E(0)| / |E(0)|, over the whole recorded run.
+
+    A symplectic integrator like leapfrog does NOT conserve energy exactly;
+    it conserves a nearby "shadow" Hamiltonian, so the true energy oscillates
+    within a bounded envelope rather than drifting to zero or diverging. This
+    metric captures that envelope, which `relative_energy_drift` (a single
+    final-step value) can miss if the run happens to sample near a trough or
+    peak of the oscillation. Use both: a small envelope with a small final
+    value is the good/expected outcome for leapfrog; a small final value
+    riding on top of a large envelope would still be a red flag.
+    """
+    e0 = energies[0]
+    if e0 == 0:
+        return float(np.max(np.abs(energies)))
+    return float(np.max(np.abs(energies - e0)) / abs(e0))
+
+
+def relative_vector_drift(vectors: np.ndarray) -> float:
+    """Relative drift of a conserved vector quantity (e.g. angular momentum).
+
+    Defined as |v(t_final) - v(0)| / |v(0)|. Falls back to the absolute
+    displacement when the initial vector is ~0 (e.g. a system with zero net
+    angular momentum by construction), since a relative measure is undefined
+    there.
+    """
+    v0 = vectors[0]
+    v_final = vectors[-1]
+    norm0 = float(np.linalg.norm(v0))
+    diff = float(np.linalg.norm(v_final - v0))
+    if norm0 < 1e-12:
+        return diff
+    return diff / norm0
+
+
+def center_of_mass_drift(com_history: np.ndarray) -> float:
+    """Maximum displacement of the center of mass from its initial position.
+
+    For the symmetric benchmark systems used in this project, initial COM
+    velocity is constructed to be ~0, so a well-behaved run should keep the
+    COM essentially pinned at its starting point. This is a diagnostic of
+    accumulated numerical asymmetry, not a "conserved quantity" in the usual
+    sense (a system with genuine nonzero COM velocity would legitimately
+    show linear COM drift, which is physical, not an error).
+    """
+    displacement = com_history - com_history[0]
+    return float(np.max(np.linalg.norm(displacement, axis=1)))
+
