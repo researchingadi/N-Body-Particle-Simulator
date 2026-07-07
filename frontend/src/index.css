@@ -1,0 +1,119 @@
+@import "tailwindcss";
+
+/*
+  Design system: "instrument panel in deep space."
+
+  Palette rationale (not a default): a blue-black void (not pure #000,
+  which flattens depth) grounds the scene; a phosphor-teal accent nods to
+  CRT radar/oscilloscope displays -- the historical instrument aesthetic of
+  observational astronomy and telemetry -- rather than a generic
+  cyan/acid-green "AI dark mode" accent. Amber and violet carry specific
+  scientific meaning (mass and velocity encoding) rather than being
+  decorative extra colors.
+*/
+:root {
+  --void: #05060a;
+  --void-deep: #020204;
+  --panel: #0d1017;
+  --panel-raised: #12161f;
+  --panel-border: #1c2230;
+  --panel-border-bright: #2a3345;
+
+  --phosphor: #7fe7c4;
+  --phosphor-dim: #3d7a68;
+  --signal-amber: #e8a94c;
+  --signal-violet: #a78bfa;
+  --danger: #e8615f;
+
+  --text-primary: #e8ecf1;
+  --text-dim: #7d8697;
+  --text-faint: #4a5262;
+
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--void);
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Glass HUD panel, reused across ControlPanel / DiagnosticsPanel / TopBar / Legend */
+.hud-panel {
+  background: color-mix(in srgb, var(--panel) 78%, transparent);
+  border: 1px solid var(--panel-border);
+  backdrop-filter: blur(14px) saturate(1.1);
+  -webkit-backdrop-filter: blur(14px) saturate(1.1);
+  border-radius: 10px;
+  box-shadow:
+    0 1px 0 0 color-mix(in srgb, white 4%, transparent) inset,
+    0 8px 32px -8px rgba(0, 0, 0, 0.6);
+}
+
+.hud-panel:hover {
+  border-color: var(--panel-border-bright);
+}
+
+.hud-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.hud-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.hud-value--phosphor {
+  color: var(--phosphor);
+  text-shadow: 0 0 12px color-mix(in srgb, var(--phosphor) 55%, transparent);
+}
+
+.hud-value--danger {
+  color: var(--danger);
+  text-shadow: 0 0 12px color-mix(in srgb, var(--danger) 55%, transparent);
+}
+
+/* Custom scrollbar for panel overflow, kept subtle */
+.hud-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.hud-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.hud-scroll::-webkit-scrollbar-thumb {
+  background: var(--panel-border-bright);
+  border-radius: 3px;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--phosphor);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
