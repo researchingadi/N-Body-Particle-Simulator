@@ -22,6 +22,7 @@ import inspect
 from typing import Callable
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 from api.models import (
     DeleteResponse,
@@ -53,6 +54,30 @@ app = FastAPI(
     title="Neural Gravity Lab API",
     description="HTTP layer over the validated Python N-body simulation engine.",
     version="0.1.0",
+)
+
+# CORS: the frontend (Stage 4B, a Vite dev server) runs on a different
+# origin than this API, so the browser blocks cross-origin requests unless
+# the server explicitly allows them. Restricted to known local dev-server
+# origins/ports (Vite's default 5173, plus common alternates and 127.0.0.1
+# equivalents) rather than "*", since credentials/methods are permissive
+# below -- this is a local-development allowlist, not a production policy;
+# see the README's FastAPI/frontend sections for what changes before deploy.
+_LOCAL_DEV_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:4173",  # vite preview
+    "http://127.0.0.1:4173",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_LOCAL_DEV_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Single in-memory registry for this process. See SimulationManager's
