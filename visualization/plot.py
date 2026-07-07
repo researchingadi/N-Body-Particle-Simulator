@@ -71,3 +71,4 @@ def plot_momentum_and_angular_momentum(sim: Simulation, path: str | Path) -> Non
     fig.tight_layout()
     fig.savefig(path, dpi=150)
     plt.close(fig)
+    plt.close(fig)
