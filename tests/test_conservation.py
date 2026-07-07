@@ -79,11 +79,3 @@ def test_figure_eight_three_body_energy_drift_bounded():
     energies = sim.history.as_arrays()["total_energy"]
     drift = abs(relative_energy_drift(energies))
     assert drift < 0.02, f"figure-eight energy drift too large: {drift}"
-    positions, velocities, masses = three_body_figure_eight()
-    config = SimulationConfig(dt=0.001, softening=0.001, integrator="leapfrog")
-    sim = Simulation(positions, velocities, masses, config)
-    sim.run(n_steps=6000, record_every=50)
-
-    energies = sim.history.as_arrays()["total_energy"]
-    drift = abs(relative_energy_drift(energies))
-    assert drift < 0.02, f"figure-eight energy drift too large: {drift}"
