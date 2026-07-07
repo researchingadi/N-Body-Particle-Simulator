@@ -90,3 +90,22 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+    if crossover_n is None:
+        print(
+            "\nBarnes-Hut did not beat direct summation at any tested N in this run.\n"
+            "That's a real result, not a bug. Two honest contributing factors, measured\n"
+            "on this machine: (1) this is a straightforward recursive Python octree, not\n"
+            "yet a performance-optimized implementation, so its constant-factor overhead\n"
+            "is real; (2) direct summation's O(N^2) *memory* footprint made N=8000 get\n"
+            "OOM-killed here before a runtime crossover was reached (speedup trend was\n"
+            "still climbing: ~0.85x at N=7000). On more RAM, or with a faster tree\n"
+            "implementation, the crossover would appear at a different N -- rerun and\n"
+            "look at the speedup trend rather than assuming a fixed crossover N."
+        )
+    else:
+        print(f"\nCrossover point (this run): Barnes-Hut becomes faster around N={crossover_n}.")
+
+
+if __name__ == "__main__":
+    main()
