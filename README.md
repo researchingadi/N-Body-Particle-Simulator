@@ -5,7 +5,7 @@ validated numerical physics, high-performance computation, cinematic
 interactive visualization, and (later) scientific ML / uncertainty
 quantification.
 
-**Status: Stage 4B  React/Three.js cinematic frontend added.** Correctness-first.
+**Status: Stage 4B - React/Three.js cinematic frontend added.** Correctness-first.
 No ML/uncertainty features yet — those come after this core is validated.
 
 ## What's implemented right now
