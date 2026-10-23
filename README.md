@@ -7,9 +7,9 @@ quantification.
 ## Screenshots
 
 <p align="center">
-  <img src="docs/screenshots/pic1.png" width="32%" alt="Neural Gravity Lab screenshot 1" />
-  <img src="docs/screenshots/pic2.png" width="32%" alt="Neural Gravity Lab screenshot 2" />
-  <img src="docs/screenshots/pic3.png" width="32%" alt="Neural Gravity Lab screenshot 3" />
+  <img src="pic1.png" width="32%" alt="Neural Gravity Lab screenshot 1" />
+  <img src="pic2.png" width="32%" alt="Neural Gravity Lab screenshot 2" />
+  <img src="pic3.png" width="32%" alt="Neural Gravity Lab screenshot 3" />
 </p>
 
 **Status: Stage 4B - React/Three.js cinematic frontend added.** Correctness-first.
